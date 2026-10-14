@@ -1,112 +1,259 @@
-# 國中小學力檢測 第四章與第六章報告自動化生成 Skill (SAAA-4-6-chapter)
-
-本專案為專門用於臺灣國中小學力檢測、新生學力測驗之 **「第四章（肆、試題分析與教學建議）與第六章（陸、整體教學建議 / 表6-1 各評量向度通過率）」自動化產出與排版技能包（Skill）**。相容於各類 AI Agent 體系（Google Antigravity、Claude Desktop / Projects、Cursor、Codex 等）與獨立 Python CLI 執行。
-
----
-
-## 🌟 核心功能與特色
-
-1. **第四章（試題分析與教學建議）完整產出**：
-   - 自動解析 Excel 答案檔與試題分析總表，逐題繪製通過率、鑑別度、高低分組劃記率矩陣。
-   - 注入 Word 底層 XML 分頁標籤（`w:pageBreakBefore`），確保每一題獨立分頁且小標題（如 `(一)形音知識`）不孤行。
-2. **第六章（表 6-1 各評量向度通過率）矩陣生成**：
-   - 支援 4 科不同的向度維度架構（國語單向度、數學/自然內容與認知雙向度交集、英語聽力/閱讀垂直跨行合併）。
-   - 數學/自然自動注入空白向度交集之灰色斜線邊框（`w:tl2br`）。
-   - 固定列高與行距（24pt）及微軟正黑體排版。
-3. **高精度統計學運算（消除二次捨入累積誤差）**：
-   - 優先讀取未截斷之原始分析結果（`*_分析結果.xlsx`），進行真實浮點數之向度平均。
-   - 內建嚴格四捨五入（Round Half-Up）格式化演算法，徹底消弭二進位浮點數（如 `0.805` 被誤捨為 `0.80`）的計算誤差。
-4. **全學科與年級廣泛支援**：
-   - 支援 4 大學科：國語文 (`C`)、數學 (`M`)、英語文 (`E`)、自然科學 (`S`)。
-   - 支援國小至國中全年級（3~8 年級）及新生特定專案代碼（如 `C7N`、`M7N`、`E7N`、`S7N`）。
-5. **內建自動化 QA 稽核檢驗套件**：
-   - 內建 `qa_verify.py`，一鍵自動核對題數、信度、樣本數、總體通過率與 Word XML 排版規範。
+# 國中小學力檢測 第四章與第六章報告自動化生成系統 (SAAA-4-6-chapter)
+## 操作手冊與技術使用指南 (User Operation Manual)
 
 ---
 
-## 📁 專案結構說明
+## 📖 系統簡介
 
-```text
-SAAA-4-6-chapter/
-├── SKILL.md                          # Agent 技能定義與操作規範
-├── README.md                         # 專案完整說明文件
-├── requirements.txt                  # Python 相依套件清單
-├── scripts/                          # 核心處理腳本
-│   ├── generate_reports.py          # 統一多學科報表生成引擎（支援 CLI 與批次處理）
-│   ├── qa_verify.py                 # 自動化稽核與數據驗證工具
-│   └── extract_dimensions.py        # 答案卷向度提取與標準化轉換工具
-├── resources/
-│   └── templates/                   # 標準 Word 官方樣板
-│       ├── pydocxTemplet_C_new.docx # 國語文第四章樣板
-│       ├── pydocxTemplet_M.docx     # 數學第四章樣板
-│       ├── pydocxTemplet_E.docx     # 英語文第四章樣板
-│       ├── pydocxTemplet_S.docx     # 自然科學第四章樣板
-│       ├── C_demo.docx              # 國語文第六章表 6-1 樣板
-│       ├── S_M_demo.docx            # 數學與自然第六章表 6-1 樣板
-│       └── six_templet_E.docx       # 英語文第六章表 6-1 樣板
-└── references/                       # 技術規範與參考文件
-    ├── subject_specifications.md    # 各學科欄位規格與資料模型詳細定義
-    └── troubleshooting.md           # Word XML 排版與故障排除指引
-```
+本系統是專門為臺灣國中小學力檢測、新生學力測驗（國語文、數學、英語文、自然科學）所設計的 **「第四章（肆、試題分析與教學建議）與第六章（陸、整體教學建議 / 表 6-1 各評量向度通過率）」自動化產出與排版引擎**。
+
+### 解決的痛點
+1. **耗費大量人工剪貼**：以往需人工逐題複製貼上難度、鑑別度、劃記率，費時費力且容易漏題、貼錯題目。
+2. **Word 排版極易錯位**：單題表格常因跨頁破裂、小標題（如 `(一)形音知識`）單獨掉在頁尾（孤行）。
+3. **表格繪製繁複**：數學與自然科表 6-1 的「內容向度 $\times$ 認知向度」交集矩陣、空白向度斜線邊框、英語聽力與閱讀垂直合併，手動繪製極易出錯。
+4. **二次四捨五入累積誤差**：以往直接拿已截斷為兩位小數的總表做二次平均，常在臨界點產生 $\pm 0.01$ 的統計誤差。本系統內建 **「原始高精度數據自動讀取」** 與 **「嚴格 Round Half-Up 演算法」**，徹底解決數據不一致問題。
 
 ---
 
-## 🚀 快速開始
+## 📑 目錄
 
-### 1. 安裝環境需求
+1. [環境準備與安裝](#-第一章環境準備與安裝)
+2. [輸入資料準備指南（重要）](#-第二章輸入資料準備指南重要)
+3. [三種操作模式教學](#-第三章三種操作模式教學)
+4. [產出成果與報告結構說明](#-第四章產出成果與報告結構說明)
+5. [精度原則與 0.01 誤差解析](#-第五章精度原則與-001-誤差解析)
+6. [品質稽核與自動化驗證 (QA)](#-第六章品質稽核與自動化驗證-qa)
+7. [常見問題與故障排除 (FAQ)](#-第七章常見問題與故障排除-faq)
+
+---
+
+## 🛠 第一章：環境準備與安裝
+
+### 1. 系統需求
+* **作業系統**：Windows 10 / 11、macOS 或 Linux。
+* **Python 版本**：Python 3.10 以上（建議 Python 3.11 ~ 3.14）。
+* **文書軟體**：Microsoft Word 2016 以上（檢視與列印 DOCX 報告）。
+
+### 2. 下載專案與安裝相依套件
+
+開啟終端機（PowerShell 或 Bash）執行：
 
 ```bash
+# 1. 複製專案儲存庫
 git clone https://github.com/SAAA-ntcu/SAAA-4-6-chapter.git
 cd SAAA-4-6-chapter
+
+# 2. 安裝 Python 核心相依套件
 pip install -r requirements.txt
 ```
 
-### 2. 單一學科與年級產出
+相依套件清單（`requirements.txt`）：
+* `pandas`：高效能 Excel 統計矩陣解析
+* `openpyxl`：讀取 Excel 原始未截斷小數
+* `python-docx`：Word 底層 XML 元素注入、斜線邊框與斷頁控制
+* `docxtpl`：以 Jinja2 樣板語法渲染第四章試題分析
 
+---
+
+## 📂 第二章：輸入資料準備指南（重要）
+
+系統執行時需要 2~3 種 Excel 資料檔案，建議將它們放置於同一資料夾內：
+
+```text
+data_directory/
+├── <科目>_ans.xlsx              # 1. 答案與評量向度檔（必備）
+├── <科目>_試題分析總表.xlsx       # 2. 古典測驗理論試題分析總表（必備）
+└── <科目>_分析結果.xlsx           # 3. 原始未四捨五入統計檔（高精度模式必備）
+```
+
+### 1. 答案與評量向度檔 (`*_ans.xlsx`)
+必須包含兩個工作表（Sheet）：
+* **工作表一：`答案`**
+  * 至少包含「題號」與「答案欄」（如國語答案欄含 `C`、數學含 `M`、英語含 `E`、自然含 `S`）。
+  * 答案格式支援單選（如 `A`、`1`）與多重答案（如 `A、B`）。
+* **工作表二：`向度` 或 `評量指標代`**
+  * 國語：包含「年級代碼」欄位（如 `A1 形音知識`、`B1 篇章理解`）。
+  * 數學/自然：包含 `1_向度`（內容向度）與 `2_向度`（認知向度，如概念理解/程序執行/解題思考）。
+  * 英語：包含 `1_向度`（聽力/閱讀）與 `2_向度`（次向度代碼，如 `A1語音聽辨`）。
+
+### 2. 試題分析總表 (`*_試題分析總表.xlsx`)
+標準大考中心 / CTT 試題分析輸出格式：
+* 第 1 列：測驗名稱標題、有效樣本數（`有效樣本數：22,543`）、信度（`Cronbach's α：0.88`）。
+* 第 4 列起：依序為「題號、鑑別度、難度、通過率、正確答案、全體劃記率(A~D/1~4/未作答)、高分組劃記率(5欄)、低分組劃記率(5欄)」。
+
+### 3. 原始未四捨五入統計檔 (`*_分析結果.xlsx`) —— 高精度保證
+* **格式說明**：含 `工作表1`，第 4 欄為精確通過率、第 7 欄為低分組精確通過率、第 9 欄為高分組精確通過率（保留至小數點後 4 位以上）。
+* **運作機制**：**只要將此檔案與總表放在同一資料夾**，系統在計算第六章表 6-1 時，就會**自動優先讀取**原始浮點數進行向度平均，杜絕二次截斷誤差！
+
+---
+
+## 🚀 第三章：三種操作模式教學
+
+### 模式一：CLI 命令列精確產出（最靈活）
+
+透過 `scripts/generate_reports.py` 腳本，指定參數產出：
+
+#### 範例 1：桃園七年級新生測驗（C7N、M7N、E7N）
 ```bash
-# 同時產生第四章與第六章（以桃園七年級新生國語 C7N 為例）：
+# 產出國語文（C7N）第四章與第六章
 python scripts/generate_reports.py \
-  --ans-file "國語文/C7N_ans.xlsx" \
-  --analysis-file "C7N_試題分析總表.xlsx" \
+  --ans-file "data/C7N_ans.xlsx" \
+  --analysis-file "data/C7N_試題分析總表.xlsx" \
   --subject C \
   --grade 7N \
   --year 115 \
   --chapter both \
-  --out-dir "./output"
+  --template-dir "resources/templates" \
+  --out-dir "output"
 
-# 數學 M7N：
-python scripts/generate_reports.py --ans-file M7N_ans.xlsx --analysis-file M7N_試題分析總表.xlsx --subject M --grade 7N --out-dir ./output
+# 產出數學科（M7N）
+python scripts/generate_reports.py --ans-file "data/M7N_ans.xlsx" --analysis-file "data/M7N_試題分析總表.xlsx" --subject M --grade 7N --out-dir "output"
 
-# 英語 E7N：
-python scripts/generate_reports.py --ans-file E7N_ans.xlsx --analysis-file E7N_試題分析總表.xlsx --subject E --grade 7N --out-dir ./output
+# 產出英語文（E7N）
+python scripts/generate_reports.py --ans-file "data/E7N_ans.xlsx" --analysis-file "data/E7N_試題分析總表.xlsx" --subject E --grade 7N --out-dir "output"
 ```
 
-### 3. 目錄自動掃描與批次產出
+#### 範例 2：標準國小/國中學力檢測（3~8 年級）
+```bash
+# 產出五年級數學（M5）
+python scripts/generate_reports.py \
+  --ans-file "data/115_M_ans.xlsx" \
+  --analysis-file "data/115_M_試題分析總表.xlsx" \
+  --subject M \
+  --grade 5 \
+  --year 115 \
+  --chapter both \
+  --out-dir "output"
+```
+
+#### 完整參數列表說明
+| 參數名稱 | 縮寫 | 是否必填 | 說明與範例 |
+| :--- | :---: | :---: | :--- |
+| `--ans-file` | - | 是* | 答案與向度 Excel 路徑（如 `C7N_ans.xlsx`） |
+| `--analysis-file` | - | 是* | 試題分析總表 Excel 路徑（如 `C7N_試題分析總表.xlsx`） |
+| `--subject` | `-s` | 是 | 學科代碼：`C`（國語）、`M`（數學）、`E`（英語）、`S`（自然） |
+| `--grade` | `-g` | 是 | 年級：`3` ~ `8`，或新生代碼 `7N` |
+| `--year` | `-y` | 否 | 學年度字串（預設 `115`） |
+| `--chapter` | `-c` | 否 | 產出章節：`4`（第四章）、`6`（第六章）、`both`（預設全部） |
+| `--template-dir`| - | 否 | 樣板資料夾路徑（預設自動搜尋 `resources/templates`） |
+| `--out-dir` | `-o` | 否 | 產出 Word 報告存放目錄（預設 `./output`） |
+| `--auto-scan` | - | 否 | 自動掃描模式目錄路徑（見模式二） |
+
+---
+
+### 模式二：目錄全自動批次掃描產出（最省事）
+
+若手邊有整批各學科的 Excel 檔案，直接指定目錄自動辨識產出：
 
 ```bash
-# 自動掃描指定目錄下的所有學科試卷與總表並批次產生：
-python scripts/generate_reports.py --auto-scan "./data" --out-dir "./output"
+python scripts/generate_reports.py --auto-scan "c:/Users/adminn/Desktop/桃園新生試題分析結果" --out-dir "./output"
+```
+系統會自動掃描目錄中的檔案配對（國語、數學、英語、自然），全自動循序產出第四章與第六章報告。
+
+---
+
+### 模式三：專案定制 Python 腳本（進階開發）
+
+在自訂腳本中直接匯入產出函數：
+
+```python
+from scripts.generate_reports import generate_chapter_4, generate_chapter_6, read_analysis_file, read_answers_and_domains
+
+# 1. 讀取數據
+analysis_data = read_analysis_file("C7N_試題分析總表.xlsx", grade_target="7N")
+answers, domains = read_answers_and_domains("C7N_ans.xlsx", subject="C", grade_target="7N")
+
+# 2. 產出第六章表 6-1
+generate_chapter_6(
+    subject="C",
+    grade="7N",
+    year="115",
+    answers=answers,
+    domains=domains,
+    analysis=analysis_data["7N"],
+    template_path="resources/templates/C_demo.docx",
+    output_path="output/第六章_C7N.docx"
+)
 ```
 
-### 4. 執行品質稽核驗證
+---
+
+## 📊 第四章：產出成果與報告結構說明
+
+### 1. 第四章（肆、試題分析與教學建議）
+* **單題獨立表格**：每一題皆包含向度編號（如 `115-C7-A1-01`）、全體通過率、鑑別度、高低分組劃記率矩陣。
+* **誘答力標註**：正確選項標註星號（如 `A*`），未達標準之誘答選項自動以破折號 `-` 標記。
+* **智慧 XML 斷頁機制**：
+  * 表格與表格之間自動注入 `w:pageBreakBefore`。
+  * 國語大標題 `一、語文知識：` 與小標題 `(一)形音知識` 自動判斷，**小標題必定與其第 1 題綁定在同一頁**，絕不發生孤行或空白頁。
+
+### 2. 第六章（陸、整體教學建議 / 表 6-1 各評量向度通過率）
+* **國語文**：5 欄式表格（向度名稱、題號列表、高分組、全體、低分組）。
+* **數學 / 自然**：
+  * 二維矩陣：橫向為認知向度（概念理解/程序執行/解題思考），縱向為內容向度（數與計算/量與實測...）。
+  * **空白向度斜線**：若該內容向度無對應題目，單元格自動合併並繪製灰色反斜線邊框（`w:tl2br`），外觀完全比照官方手冊標準。
+* **英語文**：
+  * 垂直向度跨行合併：聽力（4 項次向度）與閱讀（4 項次向度）首欄自動垂直合併。
+  * **合併文字清理**：自動修復 Word 合併單元格後文字重複串接的問題，僅保留單一置中標籤。
+* **排版規範**：全表行距固定 24pt、列高固定 24pt、字型強制微軟正黑體。
+
+---
+
+## 🎯 第五章：精度原則與 0.01 誤差解析
+
+在學力檢測報告產出中，常見兩題平均後出現 `0.80` vs `0.81` 的 0.01 爭議，原因如下：
+
+### 為什麼會差 0.01？
+* **舊式做法（總表二次平均）**：
+  總表上的數字已經先被截斷為 2 位（例：第 4 題高分組 `0.95`，第 5 題高分組 `0.66`）。
+  二者相加平均：$(0.95 + 0.66) / 2 = 1.61 / 2 = 0.805$。
+  在傳統浮點數運算中，`0.805` 因二進位誤差存成 `0.8049999999...`，被捨去變成 **`0.80`**。
+* **本系統高精度做法（真實統計平均）**：
+  系統讀取 `*_分析結果.xlsx` 的原始浮點數：第 4 題為 `0.954865...`，第 5 題為 `0.657385...`。
+  真實平均：$(0.954865 + 0.657385) / 2 = 1.61225 / 2 = 0.806125...$。
+  四捨五入後精確得到 **`0.81`**！
+
+> [!IMPORTANT]
+> **建議原則**：只要資料夾內備有 `*_分析結果.xlsx`，本系統一律採取**高精度真實平均**，產出結果與官方統計圖檔 100% 吻合！
+
+---
+
+## 🔍 第六章：品質稽核與自動化驗證 (QA)
+
+產出報告後，無需人工逐頁檢查，直接執行內建的 QA 驗證工具：
 
 ```bash
 python scripts/qa_verify.py --dir "./output" --analysis-dir "./data"
 ```
 
----
-
-## 🤖 如何掛載至各類 AI Agent？
-
-### 方式 1：在 Google Antigravity / Gemini CLI 中使用
-將本技能目錄放置於 `.agents/skills/SAAA-4-6-chapter` 或全域配置 `~/.gemini/config/skills/SAAA-4-6-chapter`，Agent 即會自動發現並調用本技能。
-
-### 方式 2：在 Cursor / Claude Desktop / 一般 LLM 專案中使用
-將此資料夾放入專案根目錄，並在系統提示詞（System Prompt / Rules / Memory）中加入：
-> 「請參考 `@SAAA-4-6-chapter/SKILL.md` 規範，依照精確統計學精度與官方樣板排版規則，執行學力檢測第四章與第六章報告之生成與校驗任務。」
+### 自動檢查項目包括：
+1. **題數完整性**：驗證產出的表格總數是否與試題分析總表的題數完全吻合（無漏題、無多題）。
+2. **元數據比對**：驗證第四章前言中的 Cronbach's $\alpha$ 信度值與有效樣本數是否正確填入。
+3. **全體通過率一致性**：驗證第六章前言段落文字中的「平均通過率是 XX%」，是否與表 6-1 最末列「整體」通過率四捨五入整數一致。
+4. **表格維度與列高**：驗證表 6-1 欄數、列數、固定 24pt 行高與斜線邊框。
+5. **分頁符號檢查**：驗證 Word 底層 XML 是否均勻分佈斷頁標籤。
 
 ---
 
-## 📄 授權條款
+## ❓ 第七章：常見問題與故障排除 (FAQ)
 
-本專案由 [SAAA-ntcu](https://github.com/SAAA-ntcu) 維護，專供教育評量資料分析、學力檢測報告編制與學術研究使用。
+### Q1: 產出時出現 `KeyError: '年級'` 或找不到欄位？
+* **原因**：答案檔 `*_ans.xlsx` 的向度工作表欄位名稱與預設不完全相同（例如寫成 `評量指標代碼` 或 `115年級`）。
+* **解法**：請確保向度表的工作表名稱為 `評量指標代` 或 `向度`，欄位包含 `年級` 或 `1_向度`；或執行 `python scripts/extract_dimensions.py` 進行正規化。
+
+### Q2: 自然科學試卷中有「不予計分」的送分題，系統能處理嗎？
+* **答案**：可以！系統會自動判斷正確答案為 `nan` 或包含 `不予計分` 之題目，自動在第四章標記為不予計分，且在第六章計算向度通過率時自動予以排除，不影響母體平均。
+
+### Q3: 產出的 Word 文件打開後，中文字型不是「微軟正黑體」？
+* **解法**：本系統在底層 XML 同時注入了 `w:eastAsia`、`w:ascii` 與 `w:hAnsi` 三種微軟正黑體標籤。請確保開啟文件的電腦端已安裝「微軟正黑體」（Windows 內建標配）。
+
+### Q4: 如何讓 AI Agent（如 Claude / ChatGPT / Antigravity）直接使用本系統？
+* **Antigravity / Gemini CLI**：直接將資料夾置於 `.agents/skills/SAAA-4-6-chapter` 即可自動辨識。
+* **Cursor / Claude Desktop**：在專案提示詞中輸入：
+  > 「請遵照 `SAAA-4-6-chapter/SKILL.md` 之操作規範，依本手冊流程產出第 4 章與第 6 章評量報告。」
+
+---
+
+## 📞 技術支援與維護
+
+本系統由 **[SAAA-ntcu](https://github.com/SAAA-ntcu)** 開發與維護。如遇任何格式改版或特殊題型需求，歡迎至 GitHub 儲存庫提出 Issue 或發起 Pull Request！
