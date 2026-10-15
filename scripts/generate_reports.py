@@ -41,6 +41,13 @@ SUBJECT_NAME_MAP = {
     "S": "自然"
 }
 
+SUBJECT_FULL_NAMES = {
+    "C": "國語文",
+    "M": "數學",
+    "E": "英語文",
+    "S": "自然科學"
+}
+
 # ==============================================================================
 # Formatting and Word XML Helpers
 # ==============================================================================
@@ -641,9 +648,21 @@ def build_question_dict(q_data, code, num, c_ans, domain, cognitive="", opt_labe
 def generate_chapter_4(subject, grade, year, answers, domains, analysis, template_path, output_path):
     subject_code = subject.upper()[0]
     grade_str = str(grade)
+    is_entrant = ("N" in grade_str.upper()) or ("新生" in grade_str)
     grade_num = int(re.sub(r'\D', '', grade_str) or 7)
     grade_cn = GRADE_CN_MAP.get(grade_num, "七")
     opt_labels = OPTION_LABELS_78 if grade_num >= 7 else OPTION_LABELS_36
+    
+    # Internal question code uses '6' for 7N entrant testing 6th grade curriculum
+    grade_code = "6" if is_entrant else str(grade_num)
+
+    subj_full = SUBJECT_FULL_NAMES.get(subject_code, SUBJECT_NAME_MAP.get(subject_code, subject))
+    if is_entrant:
+        exam_name = f"{year}年桃園市{subj_full}七年級新生學習能力檢測"
+    elif grade_num >= 7:
+        exam_name = f"{year}年國民中學{subj_full}{grade_cn}年級學生學習能力檢測"
+    else:
+        exam_name = f"{year}年國民小學{subj_full}{grade_cn}年級學生學習能力檢測"
 
     print(f"[{subject_code}] 產生第四章: 年級={grade_str}, 試題數={len(analysis['questions'])}, 樣板={os.path.basename(template_path)}")
 
@@ -653,7 +672,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             num = q_data["num"]
             d_code, d_name = domains[num - 1] if num - 1 < len(domains) else ("", "")
             c_ans = answers[num - 1] if num - 1 < len(answers) else ""
-            code = f"{year}-C{grade_str}-{d_code}1-{str(num).zfill(2)}"
+            code = f"{year}-C{grade_code}-{d_code}1-{str(num).zfill(2)}"
             q_ctx = build_question_dict(q_data, code, num, c_ans, d_name, cognitive="", opt_labels=opt_labels, is_invalid=q_data["invalid"])
             q_ctx["domain_code"] = d_code
             q_ctx["show_heading"] = False
@@ -705,6 +724,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             "grade": grade_str,
             "cronbach_s_alpha": analysis["cronbach"],
             "valid_sample": analysis["valid_sample"],
+            "exam_name": exam_name,
             "domain_legend": "；".join(legend_parts),
             "domain_intro": "本試題卷評量學生語文知識及閱讀理解兩項知能：",
             "category_a_title": "一、語文知識：",
@@ -716,6 +736,13 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
 
         doc = DocxTemplate(template_path)
         doc.render(context)
+
+        # Update preamble paragraph 1 text
+        if len(doc.paragraphs) > 1:
+            p1 = doc.paragraphs[1]
+            if "本報告先分析" in p1.text:
+                p1_text = f"本報告先分析「{exam_name}」結果，再針對各試題提供相關建議，本試卷信度Cronbach's alpha值為{analysis['cronbach']}，具一致性、穩定性及可靠性。"
+                set_paragraph_text_font(p1, p1_text)
 
         # Chinese paragraph indentation and breaks
         body = doc.element.body
@@ -765,7 +792,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             c_ans = answers[num - 1] if num - 1 < len(answers) else ""
             c1 = domain_map.get(d1, "A")
             c2 = cog_map.get(d2, "1")
-            code = f"{year}-M{grade_str}-{c1}{c2}-{str(num).zfill(2)}"
+            code = f"{year}-M{grade_code}-{c1}{c2}-{str(num).zfill(2)}"
             q_ctx = build_question_dict(q_data, code, num, c_ans, d1, cognitive=d2, opt_labels=opt_labels, is_invalid=q_data["invalid"])
             questions_ctx.append(q_ctx)
 
@@ -780,6 +807,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             "subject": "數學",
             "grade_cn": grade_cn,
             "grade": grade_str,
+            "exam_name": exam_name,
             "cronbach_s_alpha": analysis["cronbach"],
             "valid_sample": analysis["valid_sample"],
             "domain_legend": legend,
@@ -788,6 +816,14 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
 
         doc = DocxTemplate(template_path)
         doc.render(context)
+
+        # Update preamble paragraph 1 text
+        if len(doc.paragraphs) > 1:
+            p1 = doc.paragraphs[1]
+            if "本報告先分析" in p1.text:
+                p1_text = f"本報告先分析「{exam_name}」結果，再針對各試題提供相關建議，本試卷信度Cronbach's alpha值為{analysis['cronbach']}，具一致性、穩定性及可靠性。"
+                set_paragraph_text_font(p1, p1_text)
+
         add_pagebreaks_in_tables_continuous(doc)
         doc.save(output_path)
 
@@ -803,7 +839,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             num = q_data["num"]
             d1, sub_code, sub_name = parsed_domains[num - 1] if num - 1 < len(parsed_domains) else ("", "", "")
             c_ans = answers[num - 1] if num - 1 < len(answers) else ""
-            code = f"{year}-E{grade_str}-{sub_code}-{str(num).zfill(2)}"
+            code = f"{year}-E{grade_code}-{sub_code}-{str(num).zfill(2)}"
             q_ctx = build_question_dict(q_data, code, num, c_ans, d1, cognitive=sub_name, opt_labels=opt_labels, is_invalid=q_data["invalid"])
             q_ctx["sub_code"] = sub_code
             questions_ctx.append(q_ctx)
@@ -827,6 +863,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             "subject": "英文",
             "grade_cn": grade_cn,
             "grade": grade_str,
+            "exam_name": exam_name,
             "cronbach_s_alpha": analysis["cronbach"],
             "valid_sample": analysis["valid_sample"],
             "domain_legend": legend,
@@ -835,6 +872,14 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
 
         doc = DocxTemplate(template_path)
         doc.render(context)
+
+        # Update preamble paragraph 1 text
+        if len(doc.paragraphs) > 1:
+            p1 = doc.paragraphs[1]
+            if "本報告先分析" in p1.text:
+                p1_text = f"本報告先分析「{exam_name}」結果，再針對各試題提供相關建議，本試卷信度Cronbach's alpha值為{analysis['cronbach']}，具一致性、穩定性及可靠性。"
+                set_paragraph_text_font(p1, p1_text)
+
         add_pagebreaks_in_tables_continuous(doc)
         doc.save(output_path)
 
@@ -866,7 +911,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             d_name = re.sub(r"[（(].+?[）)]$", "", str(d1_raw)).strip()
             cog_code, cog_name = parse_sci_d2(d2_raw)
 
-            code = f"{year}-S{grade_str}-{d_code}{cog_code}-{str(num).zfill(2)}"
+            code = f"{year}-S{grade_code}-{d_code}{cog_code}-{str(num).zfill(2)}"
             q_ctx = build_question_dict(q_data, code, num, c_ans, d_name, cognitive=cog_name, opt_labels=opt_labels, is_invalid=q_data["invalid"])
             q_ctx["domain_code"] = d_code
             questions_ctx.append(q_ctx)
@@ -889,6 +934,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
             "subject": "自然",
             "grade_cn": grade_cn,
             "grade": grade_str,
+            "exam_name": exam_name,
             "cronbach_s_alpha": analysis["cronbach"],
             "valid_sample": analysis["valid_sample"],
             "domain_legend": domain_legend,
@@ -897,6 +943,14 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
 
         doc = DocxTemplate(template_path)
         doc.render(context)
+
+        # Update preamble paragraph 1 text
+        if len(doc.paragraphs) > 1:
+            p1 = doc.paragraphs[1]
+            if "本報告先分析" in p1.text:
+                p1_text = f"本報告先分析「{exam_name}」結果，再針對各試題提供相關建議，本試卷信度Cronbach's alpha值為{analysis['cronbach']}，具一致性、穩定性及可靠性。"
+                set_paragraph_text_font(p1, p1_text)
+
         add_pagebreaks_in_tables_continuous(doc)
         doc.save(output_path)
 
@@ -908,6 +962,7 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
 def generate_chapter_6(subject, grade, year, answers, domains, analysis, template_path, output_path):
     subject_code = subject.upper()[0]
     grade_str = str(grade)
+    is_entrant = ("N" in grade_str.upper()) or ("新生" in grade_str)
     grade_num = int(re.sub(r'\D', '', grade_str) or 7)
     grade_cn = GRADE_CN_MAP.get(grade_num, "七")
 
@@ -957,13 +1012,21 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
         # Update paragraph 1 and 2
         domain_names = [d[0] for d in sorted_domains]
         list_str = '」、「'.join(domain_names[:-1]) + '」與「' + domain_names[-1] if len(domain_names) > 1 else (domain_names[0] if domain_names else "")
-        p1_text = f"國語文{grade_cn}年級學力檢測，以「選擇題型」的方式，檢測「{list_str}」等{len(domain_names)}項能力。"
+        if is_entrant:
+            p1_text = f"國語文七年級新生學力檢測，以「選擇題型」的方式，檢測「{list_str}」等{len(domain_names)}項能力。"
+            p2_text = f"七年級新生國語文學力檢測全體學生通過率是{overall_pass_pct}%，各向度施測結果統計如下表6-1所示："
+        else:
+            p1_text = f"國語文{grade_cn}年級學力檢測，以「選擇題型」的方式，檢測「{list_str}」等{len(domain_names)}項能力。"
+            p2_text = f"國語文{grade_cn}年級學力檢測全體學生通過率是{overall_pass_pct}%，各向度施測結果統計如下表6-1所示："
         if len(doc.paragraphs) > 1:
             set_paragraph_text_font(doc.paragraphs[1], p1_text)
-
-        p2_text = f"國語文{grade_cn}年級學力檢測全體學生通過率是{overall_pass_pct}%，各向度施測結果統計如下表6-1所示："
         if len(doc.paragraphs) > 2:
             set_paragraph_text_font(doc.paragraphs[2], p2_text)
+
+        for p in doc.paragraphs:
+            if re.match(r'^表\s*6-1', p.text.strip()):
+                set_paragraph_text_font(p, "表6-1　整體學生及高分組、低分組學生於各評量向度之通過率")
+                break
 
         table = doc.tables[0]
         num_domains = len(sorted_domains)
@@ -1026,7 +1089,7 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             if clean and clean not in content_domains:
                 content_domains.append(clean)
 
-        if grade_num in [3, 4, 5, 6]:
+        if grade_num in [3, 4, 5, 6] or is_entrant:
             order = ['數與計算', '量與實測', '空間與形狀', '關係', '資料與不確定性']
         else:
             order = ['數與量', '空間與形狀與坐標幾何', '代數與函數', '資料與不確定性']
@@ -1044,9 +1107,15 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             p2_text = f"由表6-1觀之，本次測驗全體學生的平均通過率是{overall_pass_pct}%。"
             set_paragraph_text_font(doc.paragraphs[2], p2_text)
 
+        for p in doc.paragraphs:
+            if re.match(r'^表\s*6-1', p.text.strip()):
+                set_paragraph_text_font(p, "表6-1　整體學生及高分組、低分組學生於各評量向度之通過率")
+                break
+
         table = doc.tables[0]
+        math_header = "六" if is_entrant else grade_cn
         table.cell(0, 0).merge(table.cell(1, 0))
-        set_cell_value(table.cell(0, 0), grade_cn, bold=True)
+        set_cell_value(table.cell(0, 0), math_header, bold=True)
 
         for r_idx in [0, 1]:
             for c_idx, cell in enumerate(table.rows[r_idx].cells):
@@ -1195,6 +1264,11 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             doc.paragraphs[1].text = f"由表6-1觀之，本次測驗全體學生的平均通過率是{overall_pass_pct}%。"
             set_paragraph_text_font(doc.paragraphs[1], doc.paragraphs[1].text)
 
+        for p in doc.paragraphs:
+            if re.match(r'^表\s*6-1', p.text.strip()):
+                set_paragraph_text_font(p, "表6-1　整體學生及高分組、低分組學生於各評量向度之通過率")
+                break
+
         table = doc.tables[0]
         for r_idx in [0, 1]:
             row = table.rows[r_idx]
@@ -1299,6 +1373,11 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             p2_text = f"由表6-1觀之，本次測驗全體學生的平均通過率是{overall_pass_pct}%。"
             set_paragraph_text_font(doc.paragraphs[2], p2_text)
 
+        for p in doc.paragraphs:
+            if re.match(r'^表\s*6-1', p.text.strip()):
+                set_paragraph_text_font(p, "表6-1　整體學生及高分組、低分組學生於各評量向度之通過率")
+                break
+
         old_table = doc.tables[0]
         num_rows = 2 + 3 * len(content_domains) + 3
         new_table = doc.add_table(rows=num_rows, cols=16)
@@ -1324,19 +1403,20 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             cell = new_table.cell(r, c)
             set_cell_value(cell, text, bold=bold, align=align, font_size_pt=font_size_pt)
 
+        sci_header = "六" if is_entrant else grade_cn
         # Row 0
-        row0_vals = [grade_cn] + ['記憶']*3 + ['理解']*3 + ['應用']*3 + ['分析']*3 + ['整體']*3
+        row0_vals = [sci_header] + ['記憶']*3 + ['理解']*3 + ['應用']*3 + ['分析']*3 + ['整體']*3
         for i, val in enumerate(row0_vals):
             set_cell_value_S(0, i, val, bold=True, font_size_pt=12)
 
         # Row 1
-        row1_vals = [grade_cn] + ['題號', '分組', '通過率']*4 + ['題數', '分組', '通過率']
+        row1_vals = [sci_header] + ['題號', '分組', '通過率']*4 + ['題數', '分組', '通過率']
         for i, val in enumerate(row1_vals):
             fs = 10.5 if i > 0 else 12
             set_cell_value_S(1, i, val, bold=True, font_size_pt=fs)
 
         new_table.cell(0, 0).merge(new_table.cell(1, 0))
-        set_cell_value_S(0, 0, grade_cn, bold=True, font_size_pt=12)
+        set_cell_value_S(0, 0, sci_header, bold=True, font_size_pt=12)
 
         new_table.cell(0, 1).merge(new_table.cell(0, 3))
         set_cell_value_S(0, 1, '記憶', bold=True, font_size_pt=12)

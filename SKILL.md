@@ -26,6 +26,14 @@ This skill provides an end-to-end automated workflow for producing official diag
 | **英語文** (English) | `E` | 4, 5, 6, 7, 8 | `E7N` | `pydocxTemplet_E.docx`, `six_templet_E.docx` |
 | **自然科學** (Science) | `S` | 5, 7, 8 | `S7N` | `pydocxTemplet_S.docx`, `S_M_demo.docx` |
 
+> [!NOTE]
+> **Special Rules for 7th Grade Entrants (7N / 桃園市七年級新生)**:
+> - **Internal Item Codes**: Use grade digit `6` (e.g. `115-C6-A1-01`, `115-M6-D1-01`, `115-E6-A1-01`, `115-S6-A1-01`), representing Grade 6 curriculum scope.
+> - **Exam Title & Preamble**: Dynamically formatted as `[年]年桃園市[科目]七年級新生學習能力檢測`.
+> - **Math Table 6-1 Header**: Top-left merged cell displays `六`.
+> - **Table 6-1 Title**: Standardized to `表6-1　整體學生及高分組、低分組學生於各評量向度之通過率`.
+> - **Qualitative Fields**: Rows 2/3/4/9 in Chapter 4 and post-Table 6-1 suggestions in Chapter 6 are strictly preserved for domain experts.
+
 ---
 
 ## Directory Structure

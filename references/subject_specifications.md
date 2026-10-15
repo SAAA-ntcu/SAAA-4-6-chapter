@@ -115,3 +115,39 @@ Each entry in `questions` includes:
   - Cols 13~15: `整體` (題數, 分組, 通過率)
 - **Rows**: 2 header rows + 3 rows per content domain + 3 overall rows.
 - **Layout**: 12pt Chinese font with 2-by-2 character wrapping for domain names.
+
+---
+
+## 4. Special Rules for Taoyuan 7th Grade Entrant Cohorts (桃園市七年級新生 7N)
+
+For assessments administered to new 7th-grade entrants in Taoyuan (cohorts `C7N`, `M7N`, `E7N`, `S7N`), the following specialized rules apply:
+
+### 4.1 Assessment Name & Report Preamble
+The assessment name in the Chapter 4 preamble dynamically formats as:
+- **國語文**: `{year}年桃園市國語文七年級新生學習能力檢測`
+- **數學**: `{year}年桃園市數學七年級新生學習能力檢測`
+- **英語文**: `{year}年桃園市英語文七年級新生學習能力檢測`
+- **自然科學**: `{year}年桃園市自然科學七年級新生學習能力檢測`
+*(Do NOT label as standard elementary or junior high school assessments).*
+
+### 4.2 Item Identification Codes (關鍵點 A)
+- **Cohort Code**: Files, arguments, and batch processes use `C7N`, `M7N`, `E7N`, `S7N`.
+- **Internal Item Code**: Because the assessment tests 6th-grade elementary curriculum, the internal question code within Chapter 4 tables uses grade code **`6`**:
+  - 國語文: `{year}-C6-{domain_code}1-{num:02d}` (e.g. `115-C6-A1-01`)
+  - 數學: `{year}-M6-{content_code}{cognitive_code}-{num:02d}` (e.g. `115-M6-D1-01`)
+  - 英語文: `{year}-E6-{sub_code}-{num:02d}` (e.g. `115-E6-A1-01`)
+  - 自然科學: `{year}-S6-{domain_code}{cognitive_code}-{num:02d}` (e.g. `115-S6-A1-01`)
+
+### 4.3 Chapter 6 Table 6-1 Formats
+- **Table Title Paragraph**: Standardized across all subjects to:
+  `表6-1　整體學生及高分組、低分組學生於各評量向度之通過率` (using full-width space `\u3000`).
+- **Math Table 6-1 Header**: Top-left merged cell `cell(0, 0)` displays **`六`** (Grade 6), NOT `七`.
+- **Chinese Chapter 6 Preamble**: Formatted as `國語文七年級新生學力檢測...` and `七年級新生國語文學力檢測全體學生通過率是...`.
+
+### 4.4 Boundary with Domain Experts
+The automated engine strictly preserves placeholders for domain experts:
+- **Chapter 4 Row 2/3 (學習重點與次向度)**: Kept for domain experts to fill.
+- **Chapter 4 Row 4 (試題題目呈現)**: Left for manual insertion.
+- **Chapter 4 Row 9 (單題質性分析與教學建議)**: Left for experts.
+- **Chapter 6 Post-Table 6-1 In-Depth Pedagogical Suggestions**: Written by experts.
+- **English Table 6-1 Placement**: Adjusted manually after qualitative content is written.
