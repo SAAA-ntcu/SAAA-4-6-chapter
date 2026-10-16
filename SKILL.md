@@ -1,12 +1,13 @@
 ---
-name: SAAA-4-6-chapter
+name: saaa-4-6-chapter
 description: >-
   Automates the generation of Chapter 4 (肆、試題分析與教學建議) and Chapter 6 (陸、整體教學建議 / 表6-1 各評量向度通過率)
   for Taiwanese academic diagnostic assessments (學力檢測 / 新生學力測驗).
   Supports 4 subjects: Chinese (國語文 C), Math (數學 M), English (英語文 E), and Science (自然科學 S)
   across standard elementary/junior high grades (3~8) and special entry cohorts (C7N, M7N, E7N, S7N).
   Uses deterministic scripts to parse Excel datasets, render docxtpl Word templates, inject XML page breaks,
-  and generate Table 6-1 matrices with automated QA validation.
+  and generate Table 6-1 matrices with automated QA validation. Can crop booklet PDFs,
+  preserve Chinese text frames and shared reading passages, and insert verified images into Chapter 4.
 ---
 
 # SAAA-4-6-chapter Skill
@@ -32,7 +33,7 @@ This skill provides an end-to-end automated workflow for producing official diag
 > - **Exam Title & Preamble**: Dynamically formatted as `[年]年桃園市[科目]七年級新生學習能力檢測`.
 > - **Math Table 6-1 Header**: Top-left merged cell displays `六`.
 > - **Table 6-1 Title**: Standardized to `表6-1　整體學生及高分組、低分組學生於各評量向度之通過率`.
-> - **Qualitative Fields**: Rows 2/3/4/9 in Chapter 4 and post-Table 6-1 suggestions in Chapter 6 are strictly preserved for domain experts.
+> - **Expert Fields**: Preserve learning-focus and qualitative-analysis slots for domain experts. With a supplied booklet, automatically fill the Chapter 4 question-image row; leave it blank when no booklet is supplied.
 
 ---
 
@@ -62,6 +63,21 @@ SAAA-4-6-chapter/
 ---
 
 ## Standard Workflow
+
+### Booklet-to-report workflow
+
+When existing Word reports or drafts are supplied, read [word_reference_review.md](./references/word_reference_review.md). Use `inspect_reference_docs.py` to inventory logical questions in merged tables, source images, workbooks, comments and revisions. Matching item codes alone do not establish that general-grade and entrant-cohort questions are the same. Use `verify_editorial.py` to distinguish data/image completion from pending expert content.
+
+When the user supplies subject folders with booklet PDF, horizontal answer Excel and assessment-framework PPTX, read [screenshot_integration.md](./references/screenshot_integration.md) and use `scripts/build_from_source.py`. Supply the actual analysis directory; do not treat an answer sheet, historical item difficulty or a missing workbook as student results. Drafts with missing statistics require explicit `--draft` and visible pending fields.
+
+For 桃園市七年級新生 validation, use the three subject folders and their matching C7N/M7N/E7N analysis files. The integrated entry point defaults to `_AI產出` filenames. It inserts every question by actual number, includes shared articles before their first related question, and records source/PNG hashes. Run both data/image QA and rendered-page inspection before delivery.
+
+Keep question text at a consistent reading size: use the shared source scale from `image_layout.py`, never stretch every trimmed image to fill the cell. Verify actual embedded dimensions as well as image hashes; the layout audit records the source font estimate and effective reading size.
+For English, target 13pt effective booklet text; retain the 11pt target for other subjects. Shared passages use their own proportional page-fit scale. Use `build_from_source.py --subject E` to revise English alone after another subject's layout has been accepted.
+
+Remove the leading question number from each booklet image without removing question text, options, diagrams or shared articles. From 「一、試題分析」 onward, use exactly 24pt line spacing. Avoid paragraph keep flags that produce black square formatting marks in Word; use explicit page breaks outside item tables.
+
+The standard normalized-Excel workflow below remains available. Add `--booklet-pdf` or `--images-manifest` to its single-subject command to fill the question-image row.
 
 ### Step 1: Input Discovery and Validation
 Identify the input files:
@@ -117,12 +133,22 @@ The QA suite automatically validates:
 - Cronbach's alpha and sample size match analysis metadata.
 - Overall pass rate percentage in Chapter 6 text matches calculated student average.
 - Table 6-1 row/column structure satisfies subject criteria.
-- XML page break elements (`w:pageBreakBefore`) exist between question tables.
+- Explicit page breaks exist between question tables.
 - Standard font `微軟正黑體` is applied to all text runs.
+- With `.images.json`, every question image matches the recorded PNG hash and every shared article part appears exactly once.
+- Chapter 4 analysis paragraphs have exactly 24pt line spacing; no paragraph keep flags remain that cause black square formatting marks. Newly cropped images record removal of the leading question number.
+
+QA is structural/data evidence, not proof of page layout. Render and inspect the final reports; preserve the source Word templates. On Windows without LibreOffice, `scripts/render_word.ps1` can export read-only QA PDFs through a hidden independent Microsoft Word instance.
+
+After rendering, run `python scripts/verify_pagination.py --dir "<output_directory>" --pdf-dir "<rendered_pdf_directory>" --json "<output_directory>/分頁檢驗_AI產出.json"`. Every question's selection-rate table and analysis opening must occur on the same PDF page; long analyses may continue naturally on the next page. Keep the subject-wide question image scale unchanged when repairing pagination. Combine all parts of each Chinese/English shared passage into one complete image and fit it proportionally on one page with its heading; use a separate page-fit scale for passages. Keep ordinary question images left/top aligned. Chinese and English shared passages must fit completely on one page and be vertically centered in the page article area below the heading, with horizontal alignment left. Range-only listening headers remain inside the first item. Retain all image scales and aspect ratios. Measure reference Word layouts with `scripts/measure_reference_layout.py`; see `references/word_reference_review.md` for interpretation limits.
 
 ---
 
+County/city names in report text (for example 桃園市) use a proper-name mark: a single underline applied only to the name. Preserve all wording and other formatting; apply `scripts/proper_names.py` after final document assembly.
+
 ## Detailed Subject Rules
+
+Screenshots supplied as layout references control spacing, image placement and table geometry only. Preserve the existing Chinese introduction text, grade wording, answer/option labels, assessment-target text and knowledge-dimension fields. For the reference layout, put each category introduction together with its first item table and use matching list indentation for both categories. This moves page boundaries without rewriting content.
 
 Refer to [subject_specifications.md](./references/subject_specifications.md) for full details:
 - **Chinese (`C`)**: Groups questions by domain code (`A`~`J`). Subheadings `(一)形音知識` stay together with their first question table (`prev_was_heading` logic). Chapter 6 Table 6-1 has 5 columns and 13 rows.

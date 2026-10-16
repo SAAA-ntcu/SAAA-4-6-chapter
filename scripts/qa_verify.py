@@ -15,6 +15,9 @@ import argparse
 import docx
 from docx.oxml.ns import qn
 import pandas as pd
+import json
+import hashlib
+from pathlib import Path
 
 import os
 import sys
@@ -108,7 +111,8 @@ def verify_chapter_4(docx_path, analysis_path, subject, grade):
     if doc_q_count == anal_q_count:
         report["checks"].append(("Question Count", "PASS", f"Found {doc_q_count} questions"))
     else:
-        report["checks"].append(("Question Count", "WARN", f"Expected {anal_q_count}, found {doc_q_count} tables"))
+        report["checks"].append(("Question Count", "FAIL", f"Expected {anal_q_count}, found {doc_q_count} tables"))
+        report['passed'] = False
 
     # 3. Check Cronbach's alpha and Sample Size in document text
     all_text = " ".join(p.text for p in doc.paragraphs)
@@ -128,7 +132,8 @@ def verify_chapter_4(docx_path, analysis_path, subject, grade):
 
     # 4. Check XML Page Breaks
     body = doc.element.body
-    page_breaks_before = body.findall('.//' + qn('w:pageBreakBefore'))
+    page_breaks_before = [node for node in body.findall('.//' + qn('w:pageBreakBefore'))
+                         if node.get(qn('w:val'),'1') not in ('0','false','off')]
     page_break_brs = [br for br in body.findall('.//' + qn('w:br')) if br.get(qn('w:type')) == 'page']
     total_pb = len(page_breaks_before) + len(page_break_brs)
     
@@ -234,6 +239,137 @@ def verify_chapter_6(docx_path, analysis_path, subject, grade):
 
     return report
 
+def verify_item_format(docx_path):
+    from report_images import item_tables
+    document=docx.Document(docx_path)
+    checks=[]
+    paragraphs=0
+    bad=[]
+    for number,table in item_tables(document).items():
+        seen=set()
+        for row in table.rows[9:]:
+            for cell in row.cells:
+                if cell._tc in seen:continue
+                seen.add(cell._tc)
+                for paragraph in cell.paragraphs:
+                    paragraphs+=1
+                    spacing=paragraph._p.xpath('./w:pPr/w:spacing')
+                    if not spacing or spacing[0].get(qn('w:line'))!='480' or spacing[0].get(qn('w:lineRule'))!='exact':
+                        bad.append(number)
+    checks.append(('Analysis Line Spacing','FAIL' if bad else 'PASS',
+                   f'{paragraphs} 段固定行高 24pt' if not bad else f'行距不符的題號 {sorted(set(bad))}'))
+    flags=[node for tag in ['keepNext','keepLines','pageBreakBefore']
+           for node in document.element.xpath('.//w:pPr/w:'+tag)
+           if node.get(qn('w:val'),'1') not in ('0','false','off')]
+    checks.append(('Paragraph Formatting Marks','FAIL' if flags else 'PASS',
+                   f'造成黑色方點的段落旗標：{len(flags)}'))
+    return checks
+
+
+def verify_question_images(docx_path):
+    from report_images import item_tables
+    path = Path(docx_path)
+    audit_path = path.with_suffix('.images.json')
+    checks = []
+    if not audit_path.exists():
+        return [('Question Images', 'INFO', '未指定圖片對照檔，未驗證題目圖片')]
+    audit = json.loads(audit_path.read_text(encoding='utf-8'))
+    manifest = json.loads(Path(audit['manifest']).read_text(encoding='utf-8'))
+    records = {r['id']:r for r in manifest['records']}
+    document = docx.Document(path)
+    tables = item_tables(document)
+    expected = {q['question']:q for q in audit['questions']}
+    question_records=[r for r in records.values() if r['kind']=='question']
+    if any('question_number_removed' in r for r in question_records):
+        removed=sum(bool(r.get('question_number_removed')) for r in question_records)
+        checks.append(('Question Number Removal','PASS' if removed==len(question_records) else 'FAIL',
+                       f'{removed}/{len(question_records)} 題已排除來源題號'))
+    scale_checks = 0
+    if set(tables) != set(expected):
+        checks.append(('Image Question Mapping','FAIL','題表與圖片清單題號不一致'))
+    else:
+        checks.append(('Image Question Mapping','PASS',f'{len(tables)} 題表對應實際題號'))
+    for number, image in expected.items():
+        if number not in tables:
+            continue
+        drawings = tables[number].cell(4,1)._tc.xpath('.//w:drawing')
+        drawings = [drawing for drawing in drawings if any(
+            n.get('descr','').startswith(f'question:q{number};') for n in drawing.xpath('.//wp:docPr'))]
+        if len(drawings) != 1:
+            checks.append((f'q{number} image','FAIL',f'預期 1 張，實際 {len(drawings)} 張'))
+            continue
+        if audit.get('image_alignment') in {'horizontal_vertical_center','left_top'}:
+            horizontal,vertical_expected=('center','center') if audit['image_alignment']=='horizontal_vertical_center' else ('left','top')
+            center=drawings[0].xpath('ancestor::w:p[1]/w:pPr/w:jc')
+            vertical=drawings[0].xpath('ancestor::w:tc[1]/w:tcPr/w:vAlign')
+            if (not center or center[0].get(qn('w:val'))!=horizontal or
+                    not vertical or vertical[0].get(qn('w:val'))!=vertical_expected):
+                checks.append((f'q{number} alignment','FAIL','題圖未符合記錄的對齊設定'))
+        blips = drawings[0].xpath('.//a:blip')
+        relationship = blips[0].get(qn('r:embed')) if blips else None
+        part = document.part.related_parts.get(relationship)
+        if part is None or hashlib.sha256(part.blob).hexdigest() != image['sha256']:
+            checks.append((f'q{number} image','FAIL','嵌入 PNG 與題號清單不符'))
+        if tables[number].cell(1,1).text != image['code']:
+            checks.append((f'q{number} code','FAIL','圖片對照試題代碼不符'))
+        if audit.get('layout',{}).get('mode')=='uniform_source_scale' and part is not None:
+            from PIL import Image
+            from io import BytesIO
+            with Image.open(BytesIO(part.blob)) as pixels:
+                width_px,height_px=pixels.size
+            extent=drawings[0].xpath('.//wp:extent')[0]
+            actual_width=int(extent.get('cx'))/360000
+            actual_height=int(extent.get('cy'))/360000
+            scale=audit['layout']['source_scale']
+            dpi=manifest['dpi']
+            if (abs(actual_width-width_px/dpi*2.54*scale)>.01 or
+                    abs(actual_height-height_px/dpi*2.54*scale)>.01):
+                checks.append((f'q{number} scale','FAIL','題圖未依整科共同倍率等比例顯示'))
+            else:
+                scale_checks+=1
+    descriptors = [n.get('descr','') for n in document.element.xpath('.//wp:docPr')]
+    material_layouts={m['id']:m for m in audit.get('material_layouts',[])}
+    for group_id in audit['materials']:
+        composite=material_layouts.get(group_id,{})
+        if composite.get('mode') in {'single_page_composite','compact_header'}:
+            key=f'material:{group_id}:'+('combined' if composite['mode']=='single_page_composite' else 'part1')
+            drawings=[d for d in document.element.xpath('.//w:drawing')
+                      if any(p.get('descr')==key for p in d.xpath('.//wp:docPr'))]
+            if len(drawings)!=1 or composite.get('source_parts')!=records[group_id]['parts']:
+                checks.append(('Passage Composite','FAIL',f'{group_id} 整篇來源分段不完整或重複'))
+            elif drawings:
+                blip=drawings[0].xpath('.//a:blip')[0]
+                blob=document.part.related_parts[blip.get(qn('r:embed'))].blob
+                if hashlib.sha256(blob).hexdigest()!=composite['sha256']:
+                    checks.append(('Passage Composite','FAIL',f'{group_id} 文章合圖雜湊不符'))
+                pairs=[('jc','left'),('vAlign',composite.get('vertical_alignment','top'))] if audit.get('image_alignment')=='left_top' else [('jc','center'),('vAlign','center')]
+                for tag,val in pairs:
+                    query='ancestor::w:p[1]/w:pPr/w:jc' if tag=='jc' else 'ancestor::w:tc[1]/w:tcPr/w:vAlign'
+                    nodes=drawings[0].xpath(query)
+                    if not nodes or nodes[0].get(qn('w:val'))!=val:
+                        checks.append(('Image Alignment','FAIL',f'{group_id} 圖片未符合對齊設定'))
+            continue
+        for i in range(1,len(records[group_id]['parts'])+1):
+            key = f'material:{group_id}:part{i}'
+            if descriptors.count(key) != 1:
+                checks.append(('Passage Images','FAIL',f'{key} 預期恰有一次'))
+    for number in expected:
+        if sum(d.startswith(f'question:q{number};') for d in descriptors) != 1:
+            checks.append((f'q{number} descriptor','FAIL','題目圖片識別遺漏或重複'))
+    if not any(c[1]=='FAIL' for c in checks):
+        checks.append(('Embedded Image Hashes','PASS',f'{len(expected)} 張題圖逐張雜湊相符，{len(audit["materials"])} 組共用材料完整'))
+        if scale_checks:
+            checks.append(('Uniform Source Scale','PASS',f'{scale_checks} 張題圖採共同來源倍率，短題不放大、長題不個別縮小'))
+        if audit.get('image_alignment')=='horizontal_vertical_center':
+            checks.append(('Image Centering','PASS',f'{len(expected)} 張題圖及文章水平、垂直置中'))
+        elif audit.get('image_alignment')=='left_top':
+            checks.append(('Image Alignment','PASS',f'{len(expected)} 張題圖靠左、靠上；共用文章按各別對齊設定'))
+        centered=sum(m.get('vertical_alignment')=='center' for m in audit.get('material_layouts',[]))
+        if centered:
+            checks.append(('Passage Vertical Alignment','PASS',f'{centered} 組共用文章在單頁文章區域垂直置中，水平維持靠左'))
+    return checks
+
+
 def run_qa_suite(target_dir, analysis_dir=None):
     print(f"=======================================================")
     print(f"執行 SAAA-4-6-chapter 品質檢驗 (QA Audit)")
@@ -274,7 +410,15 @@ def run_qa_suite(target_dir, analysis_dir=None):
             
         if match_anal and os.path.exists(match_anal):
             rep = verify_chapter_4(p, match_anal, sub, grade)
+            rep['checks'].extend(verify_question_images(p))
+            rep['checks'].extend(verify_item_format(p))
+            rep['passed'] = rep['passed'] and not any(c[1]=='FAIL' for c in rep['checks'])
             reports.append(rep)
+        elif Path(p).with_suffix('.images.json').exists():
+            checks = verify_question_images(p)
+            reports.append({'file':f,'chapter':4,'subject':sub,'grade':grade,
+                'checks':checks+[('Statistics','INFO','沒有分析總表，本次僅驗證圖片')],
+                'passed':not any(c[1]=='FAIL' for c in checks)})
 
     # Audit Chapter 6 files
     for f in c6_files:
@@ -312,14 +456,22 @@ def run_qa_suite(target_dir, analysis_dir=None):
 
     print("=======================================================")
     print("檢驗完成！")
+    if not reports:
+        raise ValueError('沒有任何報告完成檢查；請確認報告及分析總表路徑')
+    return reports
 
 def main():
     parser = argparse.ArgumentParser(description="SAAA QA Verification Suite")
     parser.add_argument("--dir", default=".", help="Directory containing generated docx files")
     parser.add_argument("--analysis-dir", help="Directory containing item analysis Excel files")
+    parser.add_argument('--json', help='另存機器可讀的 QA 結果')
     args = parser.parse_args()
     
-    run_qa_suite(args.dir, args.analysis_dir)
+    reports = run_qa_suite(args.dir, args.analysis_dir)
+    if args.json:
+        Path(args.json).write_text(json.dumps(reports,ensure_ascii=False,indent=2),encoding='utf-8')
+    if any(not r['passed'] or any(c[1]=='FAIL' for c in r['checks']) for r in reports):
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()

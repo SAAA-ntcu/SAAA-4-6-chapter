@@ -147,7 +147,7 @@ The assessment name in the Chapter 4 preamble dynamically formats as:
 ### 4.4 Boundary with Domain Experts
 The automated engine strictly preserves placeholders for domain experts:
 - **Chapter 4 Row 2/3 (學習重點與次向度)**: Kept for domain experts to fill.
-- **Chapter 4 Row 4 (試題題目呈現)**: Left for manual insertion.
+- **Chapter 4 Row 4 (試題題目呈現)**: Automatically insert the corresponding booklet image when a PDF or image manifest is supplied; otherwise preserve the blank slot. Shared reading material is inserted once before the first related item, in source-page segments. See [screenshot_integration.md](screenshot_integration.md).
 - **Chapter 4 Row 9 (單題質性分析與教學建議)**: Left for experts.
 - **Chapter 6 Post-Table 6-1 In-Depth Pedagogical Suggestions**: Written by experts.
 - **English Table 6-1 Placement**: Adjusted manually after qualitative content is written.

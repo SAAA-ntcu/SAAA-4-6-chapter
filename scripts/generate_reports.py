@@ -575,6 +575,15 @@ def build_question_dict(q_data, code, num, c_ans, domain, cognitive="", opt_labe
     h = {}
     for i, opt in enumerate(options[:4]):
         h[f"h{i}"] = f"{opt}*" if (opt.upper() in correct_parts and not is_invalid) else opt
+    if q_data.get('missing_statistics'):
+        context = {'number':num, 'code':code, 'domain':domain, 'cognitive':cognitive,
+            'sub_domain':cognitive, 'ans':correct, 'correct_ans':correct,
+            **{f'h{i+1}':h[f'h{i}'] for i in range(4)}}
+        keys = ['discrimination','disc','pass_rate','hi_pass','lo_pass']
+        keys += [f'{g}_{n}' for g in ['all','hi','lo'] for n in [1,2,3,4,9]]
+        keys += [f'w{i}_{k}' for i in range(1,4) for k in ['ans','opt','rate']]
+        context.update({k:'待補' for k in keys})
+        return context
         
     disc_val = float(q_data["disc"]) if pd.notna(q_data["disc"]) else 0.0
     pass_val = float(q_data["pass_rate"]) if pd.notna(q_data["pass_rate"]) else 0.0
@@ -645,7 +654,7 @@ def build_question_dict(q_data, code, num, c_ans, domain, cognitive="", opt_labe
 # ==============================================================================
 # SUBJECT DISPATCHERS: CHAPTER 4
 # ==============================================================================
-def generate_chapter_4(subject, grade, year, answers, domains, analysis, template_path, output_path):
+def generate_chapter_4(subject, grade, year, answers, domains, analysis, template_path, output_path, images_manifest=None):
     subject_code = subject.upper()[0]
     grade_str = str(grade)
     is_entrant = ("N" in grade_str.upper()) or ("新生" in grade_str)
@@ -954,6 +963,19 @@ def generate_chapter_4(subject, grade, year, answers, domains, analysis, templat
         add_pagebreaks_in_tables_continuous(doc)
         doc.save(output_path)
 
+    if analysis.get('draft'):
+        from report_images import mark_missing_statistics
+        mark_missing_statistics(output_path, 4)
+    if images_manifest:
+        from report_images import attach_question_images
+        attach_question_images(output_path, images_manifest)
+    else:
+        from report_images import keep_item_analysis_connected
+        document=docx.Document(output_path)
+        keep_item_analysis_connected(document)
+        document.save(output_path)
+    from proper_names import format_counties
+    format_counties(output_path)
     print(f" -> 產出成功: {output_path}")
 
 # ==============================================================================
@@ -986,7 +1008,7 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
             
         pass_val = q.get("raw_pass_rate")
         if pass_val is None:
-            pass_val = float(q["pass_rate"]) if pd.notna(q["pass_rate"]) else 0.0
+            pass_val = float(q["pass_rate"]) if pd.notna(q["pass_rate"]) else (float('nan') if analysis.get('draft') else 0.0)
         
         questions_data[num] = {
             'hi': hi_pass,
@@ -995,7 +1017,7 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
         }
 
     overall_pass_val = sum(q['all'] for q in questions_data.values()) / max(len(questions_data), 1)
-    overall_pass_pct = int(round(overall_pass_val * 100))
+    overall_pass_pct = '待補' if analysis.get('draft') else int(round(overall_pass_val * 100))
 
     if subject_code == "C":
         # Group domains
@@ -1555,6 +1577,13 @@ def generate_chapter_6(subject, grade, year, answers, domains, analysis, templat
         old_table._tbl.getparent().remove(old_table._tbl)
         doc.save(output_path)
 
+    from report_images import normalize_chapter6_layout
+    normalize_chapter6_layout(output_path, subject_code)
+    if analysis.get('draft'):
+        from report_images import mark_missing_statistics
+        mark_missing_statistics(output_path, 6)
+    from proper_names import format_counties
+    format_counties(output_path)
     print(f" -> 產出成功: {output_path}")
 
 # ==============================================================================
@@ -1582,7 +1611,7 @@ def resolve_templates(template_dir, subject):
 
     return t4, t6
 
-def process_single_run(ans_file, analysis_file, subject, grade=None, year="115", chapter="both", template_dir=None, out_dir=None):
+def process_single_run(ans_file, analysis_file, subject, grade=None, year="115", chapter="both", template_dir=None, out_dir=None, images_manifest=None, booklet_pdf=None, output_suffix=''):
     if not os.path.exists(ans_file):
         raise FileNotFoundError(f"找不到答案檔: {ans_file}")
     if not os.path.exists(analysis_file):
@@ -1597,6 +1626,14 @@ def process_single_run(ans_file, analysis_file, subject, grade=None, year="115",
     if out_dir is None:
         out_dir = os.getcwd()
     os.makedirs(out_dir, exist_ok=True)
+    if images_manifest and booklet_pdf:
+        raise ValueError('booklet_pdf 與 images_manifest 請擇一')
+    if booklet_pdf:
+        from question_screenshots import export, identity
+        from pathlib import Path
+        crop_output = Path(out_dir)/'screenshots'
+        export(Path(booklet_pdf), 'booklets', crop_output, 220, {}, {})
+        images_manifest = crop_output/'booklets'/identity(Path(booklet_pdf))/'manifest.json'
 
     subject_code = subject.upper()[0]
     t4_path, t6_path = resolve_templates(template_dir, subject_code)
@@ -1632,6 +1669,8 @@ def process_single_run(ans_file, analysis_file, subject, grade=None, year="115",
     print(f"輸出目錄: {out_dir}")
     print(f"=======================================================")
 
+    if images_manifest and len(target_grades) != 1:
+        raise ValueError('單一題本／圖片清單只可套用單一年級，請明確指定 --grade')
     for g in target_grades:
         g_data = grades_data.get(g) or list(grades_data.values())[0]
         a_data = analysis_data.get(g) or analysis_data.get(str(g)) or list(analysis_data.values())[0]
@@ -1650,22 +1689,22 @@ def process_single_run(ans_file, analysis_file, subject, grade=None, year="115",
         # Chapter 4
         if chapter in ["4", "both"]:
             if t4_path and os.path.exists(t4_path):
-                out_name_c4 = f"第四章_{cohort_code}.docx"
+                out_name_c4 = f"第四章_{cohort_code}{output_suffix}.docx"
                 out_path_c4 = os.path.join(out_dir, out_name_c4)
-                generate_chapter_4(subject_code, g_tag, year, answers, domains, a_data, t4_path, out_path_c4)
+                generate_chapter_4(subject_code, g_tag, year, answers, domains, a_data, t4_path, out_path_c4, images_manifest)
             else:
                 print(f"[警告] 找不到第四章樣板: {t4_path}")
 
         # Chapter 6
         if chapter in ["6", "both"]:
             if t6_path and os.path.exists(t6_path):
-                out_name_c6 = f"第六章_{cohort_code}.docx"
+                out_name_c6 = f"第六章_{cohort_code}{output_suffix}.docx"
                 out_path_c6 = os.path.join(out_dir, out_name_c6)
                 generate_chapter_6(subject_code, g_tag, year, answers, domains, a_data, t6_path, out_path_c6)
             else:
                 print(f"[警告] 找不到第六章樣板: {t6_path}")
 
-def auto_scan_and_run(scan_dir, out_dir=None, year="115", chapter="both"):
+def auto_scan_and_run(scan_dir, out_dir=None, year="115", chapter="both", output_suffix=''):
     if out_dir is None:
         out_dir = scan_dir
     files = os.listdir(scan_dir)
@@ -1698,7 +1737,7 @@ def auto_scan_and_run(scan_dir, out_dir=None, year="115", chapter="both"):
                 p_ans = os.path.join(scan_dir, a_file)
                 p_anal = os.path.join(scan_dir, match_anal)
                 try:
-                    process_single_run(p_ans, p_anal, subject=sub, year=year, chapter=chapter, out_dir=out_dir)
+                    process_single_run(p_ans, p_anal, subject=sub, year=year, chapter=chapter, out_dir=out_dir, output_suffix=output_suffix)
                 except Exception as e:
                     print(f"[錯誤] 處理 {a_file} 失敗: {e}")
 
@@ -1713,11 +1752,16 @@ def main():
     parser.add_argument("--template-dir", help="Directory containing template docx files")
     parser.add_argument("--out-dir", help="Directory to save generated docx reports")
     parser.add_argument("--auto-scan", help="Scan a directory and automatically run for all found datasets")
+    parser.add_argument('--booklet-pdf', help='題本 PDF，自動截圖並填入第四章')
+    parser.add_argument('--images-manifest', help='既有截圖 manifest.json，與 --booklet-pdf 擇一')
+    parser.add_argument('--output-suffix', default='', help='輸出檔名後綴，例如 _AI產出')
 
     args = parser.parse_args()
 
     if args.auto_scan:
-        auto_scan_and_run(args.auto_scan, out_dir=args.out_dir, year=args.year, chapter=args.chapter)
+        if args.images_manifest or args.booklet_pdf:
+            parser.error('--auto-scan 的多科檔案不能共用同一份題本；請使用 build_from_source.py 或單科參數')
+        auto_scan_and_run(args.auto_scan, out_dir=args.out_dir, year=args.year, chapter=args.chapter, output_suffix=args.output_suffix)
         return
 
     if not args.ans_file or not args.analysis_file or not args.subject:
@@ -1732,7 +1776,10 @@ def main():
         year=args.year,
         chapter=args.chapter,
         template_dir=args.template_dir,
-        out_dir=args.out_dir
+        out_dir=args.out_dir,
+        images_manifest=args.images_manifest,
+        booklet_pdf=args.booklet_pdf,
+        output_suffix=args.output_suffix,
     )
 
 if __name__ == "__main__":

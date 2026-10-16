@@ -1,6 +1,17 @@
 # 國中小學力檢測 第四章與第六章報告自動化生成系統 (SAAA-4-6-chapter)
 ## 操作手冊與技術使用指南 (User Operation Manual)
 
+## 題本截圖與報告整合
+
+已支援從題本 PDF、橫式正式答案 Excel、評量架構 PPTX 與施測統計，一次產出含逐題截圖及共用文章的第四章與第六章。驗證報告預設以 `_AI產出.docx` 命名。
+
+```powershell
+python scripts/build_from_source.py --input-dir "C:/Users/adminn/Desktop/成果報告螢幕截圖研究/桃園市七年級新生" --analysis-dir "C:/Users/adminn/Desktop/桃園新生試題分析結果" --out-dir "驗證輸出"
+python scripts/qa_verify.py --dir "驗證輸出" --analysis-dir "C:/Users/adminn/Desktop/桃園新生試題分析結果" --json "驗證輸出/檢驗結果_AI產出.json"
+```
+
+完整規則與既有標準化資料的接法請見 [截圖整合說明](references/screenshot_integration.md)。程式自帶截圖模組，不依賴外部研究資料夾。國語文框線、跨頁文章及題組會一併處理，並保留來源與圖片對照。
+
 ---
 
 ## 📖 系統簡介
@@ -210,7 +221,7 @@ generate_chapter_6(
   * 各科表 6-1 表格標題一律規範為：`表6-1　整體學生及高分組、低分組學生於各評量向度之通過率`（全形空白）。
 * **與專家學者質性撰寫之界限維護**：
   * 第四章 Row 2/3（學習重點與次向度）：由專家填寫，程式保持正確欄位預留。
-  * 第四章 Row 4（試題題目呈現）：依專案規劃暫由人工進行。
+  * 第四章 Row 4（試題題目呈現）：提供題本或截圖清單時自動插圖；未提供則保留空白。共用文章置於首次相關題目前，不在每題重複貼入。
   * 第四章 Row 9（單題質性分析與教學建議）：由專家撰寫，程式保留結構不介入。
   * 第六章表 6-1 之後的深入教學建議：由專家依分析數據撰寫。
   * 英語表 6-1 的章節位置：待專家撰寫完成後微調。
@@ -238,7 +249,7 @@ generate_chapter_6(
 
 ## 🔍 第六章：品質稽核與自動化驗證 (QA)
 
-產出報告後，無需人工逐頁檢查，直接執行內建的 QA 驗證工具：
+產出報告後，先執行資料與圖片 QA，再將 Word 轉為 PDF／PNG 檢查各頁版面。機器檢查不能取代圖片可讀性與斷頁檢查：
 
 ```bash
 python scripts/qa_verify.py --dir "./output" --analysis-dir "./data"
